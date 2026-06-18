@@ -43,6 +43,16 @@ class TpUartDataLinkLayer : public DataLinkLayer
     bool enabled() const;
     DptMedium mediumType() const override;
     void reset();
+    // True bus-monitor mode (use case a). While active the device is passive:
+    // it sends no ACK, does not repeat, and suspends its normal KNX function.
+    // Every raw frame on the local line is delivered to the registered
+    // BusmonitorCallback with monitorMode = true and is NOT forwarded to the
+    // network layer. Returns false if the link is not initialized.
+    bool enterBusmonitorMode();
+    // Leave bus-monitor mode and resume normal operation (ACK/routing).
+    // Returns false if the link is not initialized.
+    bool exitBusmonitorMode();
+    // Legacy alias for enterBusmonitorMode(), kept for backward compatibility.
     void monitor();
     void stop(bool state);
     void requestBusy(bool state);

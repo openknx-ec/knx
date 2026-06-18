@@ -14,6 +14,19 @@ class Platform;
 
 typedef void (*ActivityCallback)(uint8_t info);
 
+/**
+ * Passive bus-monitor observer.
+ *
+ * Invoked for every frame the data link layer receives, before the network/
+ * application layer applies any address filter. `frame` is only valid for the
+ * duration of the call (it references stack-internal buffers) - copy out what
+ * you need. `monitorMode` is true when the frame was delivered by the true
+ * bus-monitor mode (passive, device off the bus) and false when it is a passive
+ * observation during normal operation. The callback must be short and must not
+ * block; it runs in the stack loop context.
+ */
+typedef void (*BusmonitorCallback)(CemiFrame& frame, bool monitorMode);
+
 class DataLinkLayerCallbacks
 {
 protected:
@@ -55,8 +68,19 @@ class DataLinkLayer
     virtual bool enabled() const = 0;
     virtual DptMedium mediumType() const = 0;
 
+    // Passive bus-monitor hook (use case b): register (or clear with nullptr)
+    // an observer that is invoked for every received frame, before address
+    // filtering. Registering a callback does NOT change ACK/routing behaviour
+    // and is safe to call at runtime.
+    void setBusmonitorCallback(BusmonitorCallback callback);
+    BusmonitorCallback busmonitorCallback() const;
+
   protected:
     void frameReceived(CemiFrame& frame);
+    // Notify the registered busmonitor observer, if any. Returns true when a
+    // callback was invoked. `monitorMode` distinguishes true monitor mode (a)
+    // from passive sniffing in normal operation (b).
+    bool notifyBusmonitor(CemiFrame& frame, bool monitorMode);
     void dataConReceived(CemiFrame& frame, bool success);
     bool sendTelegram(NPDU& npdu, AckType ack, uint16_t destinationAddr, AddressType addrType, uint16_t sourceAddr, FrameFormat format, Priority priority, SystemBroadcast systemBroadcast, bool doNotRepeat = false);
     virtual bool sendFrame(CemiFrame& frame) = 0;
@@ -65,6 +89,7 @@ class DataLinkLayer
     NetworkLayerEntity& _networkLayerEntity;
     Platform& _platform;
     BusAccessUnit& _bau;
+    BusmonitorCallback _busmonitorCallback = nullptr;
 #ifdef USE_CEMI_SERVER
     CemiServer* _cemiServer;
 #endif

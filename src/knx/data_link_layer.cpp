@@ -33,6 +33,25 @@ DataLinkLayer::DataLinkLayer(DeviceObject& devObj, NetworkLayerEntity& netLayerE
 #endif
 }
 
+void DataLinkLayer::setBusmonitorCallback(BusmonitorCallback callback)
+{
+    _busmonitorCallback = callback;
+}
+
+BusmonitorCallback DataLinkLayer::busmonitorCallback() const
+{
+    return _busmonitorCallback;
+}
+
+bool DataLinkLayer::notifyBusmonitor(CemiFrame& frame, bool monitorMode)
+{
+    if (_busmonitorCallback == nullptr)
+        return false;
+
+    _busmonitorCallback(frame, monitorMode);
+    return true;
+}
+
 #ifdef USE_CEMI_SERVER
 
 void DataLinkLayer::cemiServer(CemiServer& cemiServer)
@@ -163,6 +182,10 @@ void DataLinkLayer::frameReceived(CemiFrame& frame)
     NPDU& npdu = frame.npdu();
     uint16_t ownAddr = _deviceObject.individualAddress();
     SystemBroadcast systemBroadcast = frame.systemBroadcast();
+
+    // Passive bus-monitor hook (use case b): report every received frame to the
+    // application before address filtering. This does not affect ACK/routing.
+    notifyBusmonitor(frame, false);
 
 #ifdef USE_CEMI_SERVER
     // Do not send our own message back to the tunnel

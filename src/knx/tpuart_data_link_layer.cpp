@@ -71,12 +71,32 @@ void TpUartDataLinkLayer::requestBusy(bool state)
     _tpuart.busyMode(state);
 }
 
-void TpUartDataLinkLayer::monitor()
+bool TpUartDataLinkLayer::enterBusmonitorMode()
 {
     if (!_initialized)
-        return;
+        return false;
 
-    _tpuart.startMonitoring();
+    // U_BUSMON_REQ: the chip becomes passive (no ACK, no repeat). Frames are
+    // still delivered via registerReceivedFrame() -> processRxFrame(), where we
+    // route them to the BusmonitorCallback instead of the network layer.
+    return _tpuart.startMonitoring();
+}
+
+bool TpUartDataLinkLayer::exitBusmonitorMode()
+{
+    if (!_initialized)
+        return false;
+
+    // reset() re-runs the driver's init handshake and returns the chip to
+    // BCU_CONNECTED (normal operation). The own address is re-applied from
+    // loop() on the next iteration via setOwnAddress().
+    _tpuart.reset();
+    return true;
+}
+
+void TpUartDataLinkLayer::monitor()
+{
+    enterBusmonitorMode();
 }
 
 void TpUartDataLinkLayer::initialize()
@@ -196,8 +216,21 @@ void TpUartDataLinkLayer::processRxFrame(TPUart::Frame &tpFrame)
     if (isMonitoring())
     {
         printMessage(tpFrame.printFrame().c_str(), false);
+
+        // True bus-monitor mode (use case a): deliver the raw frame as a
+        // structured CemiFrame to the registered observer (monitorMode = true),
+        // then stop. In monitor mode the device is passive, so the frame must
+        // NOT be forwarded to the network layer.
+        if (busmonitorCallback() != nullptr)
+        {
+            uint8_t *monCemiData = (uint8_t *)tpFrame.cemiData();
+            CemiFrame monFrame(monCemiData, tpFrame.cemiSize());
+            notifyBusmonitor(monFrame, true);
+            delete monCemiData;
+        }
+        return;
     }
-    
+
 #if MASK_VERSION != 0x091A
     if (tpFrame.isFiltered())
         return;
